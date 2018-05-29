@@ -104,7 +104,7 @@ String const
 
 static_assert(4==sizeof(int),"");
 
-int constexpr BOUND=1000;
+int constexpr BOUND=500;
 
 std::unordered_map<int,unsigned> index;
 std::vector<String> names;
@@ -184,7 +184,7 @@ int main(){
 		// append one if there isn't any space inside
 		if(st.find(' ')==std::string::npos)
 			st+=' ';
-		
+
 		insert(x,String(st.c_str()),1);
 	}
 
