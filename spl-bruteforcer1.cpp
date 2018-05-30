@@ -217,6 +217,7 @@ int main(){
 				names.erase(it);
 
 				int const vi=st.val;
+				if(vi==0)continue;
 
 				for(auto [vj,nj]:fixed_names)if(
 					vj!=0 // a-0=a+0=a, a*0=0
