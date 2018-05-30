@@ -22,8 +22,8 @@ Names should not contain spaces.
 #include<vector>
 #include<cmath>
 #include<deque>
+#include<queue>
 #include<string>
-
 
 static unsigned constexpr strlen_(char const* st){
 	return *st?1+strlen_(1+st):0;
@@ -104,44 +104,46 @@ String const
 
 static_assert(4==sizeof(int),"");
 
-int constexpr BOUND=500;
+int constexpr BOUND=10000;
 
-std::unordered_map<int,unsigned> index;
-std::vector<String> names;
-std::vector<int> value;
+std::unordered_map<int,String> names,fixed_names;
+struct state{
+	unsigned len;int val;
+	state(unsigned len,int val):len(len),val(val){}
+	bool operator<(state x)const{return len>x.len;}
+};
+std::priority_queue<state> pq; // for Dijkstra's algorithm (variant)
+// to find the shortest representation of each number
 
-bool doneat;
-void insert(int val,String st){
-	if(val>BOUND||val<-BOUND)return;
-	if(st.length()>900)return;
+// Return (true) if insert successful, (false) otherwise.
+bool insert_(int val,String new_name){
+	if(
+		val>BOUND||val<-BOUND or
+		fixed_names.count(val) or
+		new_name.length()>900
+	)return false;
 
-	auto it=index.find(val);
-	if(it==index.end()){
-		index.emplace(val,names.size());
-		value.push_back(val);
-		doneat=1;
-		names.push_back(std::move(st));
-		return;
+	auto it=names.find(val);
+	if(it==names.end()){
+		names.emplace(val,new_name);
+		return true;
 	}else{
-		String& name=names[it->second];
-		if(st.length()<name.length()){
-			doneat=1;
-			name=std::move(st);
-			return;
+		String& name=it->second;
+		if(new_name.length()<name.length()){
+			name=new_name;
+			return true;
 		}
 	}
+	return false;
 }
 
-void insert(int val,String st,int n_pop){
-	bool doneat1=doneat;
-	doneat=false;
-	insert(val,st);
-	if(!doneat){
-		doneat=doneat1;
+// also do (manual) GC and update (pq).
+void insert(int val,String new_name,int n_pop){
+	if(insert_(val,new_name) /* successful */)
+		pq.emplace(new_name.length(),val);
+	else
 		String::__pop(n_pop);
-	}
 }
-
 
 auto const factorial_table=[](){
 	int constexpr SIZE=34;
@@ -153,27 +155,28 @@ auto const factorial_table=[](){
 	}
 	return factorial_table;
 }();
-
 int factorial(int x){
 	return x<(int)factorial_table.size()?factorial_table[x]:0;
 }
 
 int main(){
-	insert(0,String("zero "));
+	insert(0,String("zero "),1);
 
 	String st("a ");
 	String const BIG("big "), CAT("cat "), PIG("pig ");
 
 	for(int i=1;i;i<<=1,st=st+BIG){
-		insert(i,st+CAT,1);
+		insert( i,st+CAT,1);
 		insert(-i,st+PIG,1);
 	}
 
-	int x;
-	std::deque<std::string> characters;
-	while(std::cin>>x){
-		characters.emplace_back();
-		std::string& st=characters.back();
+	int charv; // value of characters
+	std::deque<std::string> charn; // name of characters
+	// used to store the char* pointers safely
+
+	while(std::cin>>charv){ // read characters (8 I, 100 you, ...)
+		charn.emplace_back();
+		std::string& st=charn.back();
 
 		std::cin>>std::ws;
 		std::getline(std::cin,st);
@@ -185,45 +188,75 @@ int main(){
 		if(st.find(' ')==std::string::npos)
 			st+=' ';
 
-		insert(x,String(st.c_str()),1);
+		insert(charv,String(st.c_str()),1);
 	}
-
-	do{
-		doneat=false;
-		for(unsigned i=value.size();i-->0;)
-		for(unsigned j=value.size();j-->0;){
-			int vi=value[i],vj=value[j];
-			String ni=names[i], nj=names[j];
-			insert(vi-vj,DIFF+ni+nj,2);
-			insert(vi*vj,PROD+ni+nj,2);
-			if(vj){
-				insert(vi/vj,QUOT+ni+nj,2);
-				insert(vi%vj,REM+ni+nj,2);
-			}
-			insert(vi+vj,SUM+ni+nj,2);
-		}
-
-		for(unsigned i=value.size();i-->0;){
-			int v=value[i];
-			String n=names[i];
-
-			insert(v*v*v,CUBE+n,1);
-			if(v>=0) insert(factorial(v),FACT+n,1);
-			insert(v*v,SQR+n,1);
-			if(v>=0) insert((int)std::sqrt(v),SQRT+n,1);
-			insert(v<<1,TWICE+n,1);
-		}
-
-	}while(doneat);
 
 	std::cin.ignore(1);
 	std::cin.clear();
-	while(std::cin>>x){
-		auto it=index.find(x);
-		if(it==index.end()){
-			std::cout<<x<<": not found\n";
-			continue;
+	int queryv;
+	while(std::cin>>queryv){
+
+		auto it=fixed_names.find(queryv);
+		if(it==fixed_names.end()){
+
+			while(true){
+
+				state st{0,0};
+				do{
+					if(pq.empty()){
+						goto break_outer;
+						// can't do anything more
+					}
+					st=pq.top();pq.pop();
+				}while( fixed_names.count(st.val) or (
+					it=names.find(st.val),st.len!=it->second.length()
+				));
+
+				fixed_names.insert(*it); // the (val, name) pair
+				String const ni=it->second;
+				names.erase(it);
+
+				int const vi=st.val;
+
+				for(auto [vj,nj]:fixed_names)if(
+					vj!=0 // a-0=a+0=a, a*0=0
+					and vj!=vi // a-a=0, a+a='twice a', a*a='the square of a',
+					// a/a='a cat',a%a=0
+				){
+					insert(vi-vj,DIFF+ni+nj,2);
+					insert(vj-vi,DIFF+nj+ni,2);
+					
+					insert(vi*vj,PROD+ni+nj,2);
+					
+					insert(vi/vj,QUOT+ni+nj,2);
+					insert(vj/vi,QUOT+nj+ni,2);
+
+					insert(vi%vj,REM+ni+nj,2);
+					insert(vj%vi,REM+nj+ni,2);
+
+					insert(vi+vj,SUM+ni+nj,2);
+				}
+
+				insert(vi*vi*vi,CUBE+ni,1);
+				if(vi>=0) insert(factorial(vi),FACT+ni,1);
+				insert(vi*vi,SQR+ni,1);
+				if(vi>=0) insert((int)std::sqrt(vi),SQRT+ni,1);
+				insert(vi<<1,TWICE+ni,1);
+
+				if(st.val==queryv)
+					break;
+
+			}
+			break_outer:;
 		}
-		std::cout<<x<<": "<<names[it->second]<<'\n';
+
+		it=fixed_names.find(queryv);
+		if(it==fixed_names.end()){
+			std::cout<<queryv<<": not found\n";
+		}else{
+			std::cout<<queryv<<": "<<it->second<<'\n';
+		}
+
 	}
+
 }
